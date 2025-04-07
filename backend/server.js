@@ -2,6 +2,7 @@ const express = require('express');
 const { exec } = require('child_process');
 const app = express();
 app.use(express.json());
+const router = express.Router();
 
 const basicAuth = require('basic-auth');
 
@@ -19,26 +20,39 @@ function auth(req, res, next) {
     next();
 }
 
-app.post('/trigger', (req, res) => {
-    console.log("🚀 Trigger received from Pipedream");
+router.post('/post', (req, res) => {
+    console.log("🚀 Discord trigger received");
 
     // Optionally get dynamic message
     const message = req.body.message || undefined;
 
-    exec(`node post-channels.js "${message.replace(/"/g, '\\"')}"`, (err, stdout, stderr) => {
+    exec(`node ./routes/discord.js "${message.replace(/"/g, '\\"')}"`, (err, stdout, stderr) => {
         if (err) {
             console.error(`❌ Error: ${err}`);
-            return res.status(500).send("Error running script.");
+            return res.status(500).send("Error running Discord posting script.");
         }
         console.log(stdout);
-        res.send("✅ Song posted successfully!");
+        res.send("✅ Song posted successfully to Discord Channels!");
     });
-
-
-
 });
 
-const PORT = 3000;
+router.post('/save', (req, res) => {
+    console.log("🚀 Google trigger received");
+
+    // Optionally get dynamic message
+    const message = req.body.message || undefined;
+
+    exec(`node ./routes/google.js "${message.replace(/"/g, '\\"')}"`, (err, stdout, stderr) => {
+        if (err) {
+            console.error(`❌ Error: ${err}`);
+            return res.status(500).send("Error running Google Sheets posting script.");
+        }
+        console.log(stdout);
+        res.send("✅ Song posted successfully to Google Sheets!");
+    });
+});
+
+const PORT = process.env.PORT | 3000;
 app.listen(PORT, () => {
     console.log(`🟢 Server listening at http://localhost:${PORT}/trigger`);
 });
