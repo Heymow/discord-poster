@@ -1,74 +1,102 @@
-module.exports = async function postToDiscordChannels() {
-    // This script automates posting messages to specific Discord channels using Playwright.
-    // It requires a valid Discord session stored in 'discord-session.json' and uses the Playwright library to interact with the Discord web app.
-    // The script takes a message as a command line argument and posts it to the specified channels.
-    // It also handles @everyone mentions for specific channels.
+const { chromium } = require("playwright");
+const urls = require("../discord_channels/channel-urls");
+const {
+  typeLikeHuman,
+  navigateToUrl,
+  handleEveryoneConfirmation,
+  postMessageToChannel,
+} = require("../services/discord");
+const { getChannelsList } = require("../services/discord");
 
-    const { chromium } = require('playwright'); // Import the Playwright library for browser automation
+async function postToChannels(message, postType = "Suno link") {
+  console.log(
+    `📩 Posting ${postType} to Channels called with message:`,
+    message
+  );
 
-    const CHANNEL_URLS = require('../discord_channels/channel-urls'); // Import the channel URLs from a local file
-    const EVERYONE_CHANNELS = new Set(require('../discord_channels/everyone-channels')); // Import the channels that require @everyone mention
+  const browser = await chromium.launch({ headless: false });
+  try {
+    const context = await browser.newContext({
+      storageState: "discord-session.json",
+    });
 
-    const MESSAGE = process.argv[2] || undefined; // Get the message to be sent from command line arguments
+    // Création d'un seul onglet pour toutes les URLs
+    const page = await context.newPage();
 
-    async function typeLikeHuman(page, selector, text) {
-        const el = await page.$(selector);
-        for (let char of text) {
-            await el.type(char);
-            const delay = 30 + Math.random() * 50;
-            await page.waitForTimeout(delay);
+    // Process URLs one by one
+    const channelsList = getChannelsList(postType);
+    if (!channelsList) return;
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const url of channelsList) {
+      console.log(
+        `\n📬 Processing channel ${successCount + failCount + 1}/${
+          channelsList.size || channelsList.length
+        }: ${url}`
+      );
+
+      try {
+        // S'assurer que toute activité précédente est terminée
+        await page.waitForLoadState("networkidle");
+
+        const isEveryone = urls.EVERYONE_CHANNELS.has(url);
+        isEveryone && console.log(`🔍 Channel accepts @everyone tag`);
+
+        console.log(`⏱️ Navigating to ${url}...`);
+        const navigated = await navigateToUrl(page, url);
+
+        if (!navigated) {
+          console.log(`❌ Navigation failed, skipping channel`);
+          failCount++;
+          continue;
         }
+
+        // Attendre explicitement que la page soit complètement chargée
+        console.log(`⏱️ Waiting for page to be fully loaded...`);
+        await page.waitForLoadState("networkidle", { timeout: 30000 });
+        await page.waitForLoadState("domcontentloaded");
+
+        // Attendre encore un moment pour être sûr
+        await page.waitForTimeout(2000);
+
+        // Post the message
+        console.log(`⏱️ Posting message...`);
+        await postMessageToChannel(page, message, isEveryone);
+
+        // Success!
+        console.log(`✅ Successfully posted to channel`);
+        successCount++;
+
+        // Add delay between posts (augmenter à 5-10 secondes)
+        const delay = 5000 + Math.random() * 5000;
+        console.log(
+          `⏱️ Waiting ${Math.round(delay / 1000)} seconds before next post...`
+        );
+        await page.waitForTimeout(delay);
+      } catch (err) {
+        console.error(`❌ Failed posting to ${url}: ${err.message}`);
+        failCount++;
+        // Attendre un peu avant de continuer en cas d'erreur
+        await page.waitForTimeout(3000);
+      }
     }
 
-    (async () => {
-        console.log("📩 Received message:", process.argv[2]);
-        const browser = await chromium.launch({ headless: false });
-        try {
-            const context = await browser.newContext({ storageState: 'discord-session.json' });
-            const page = await context.newPage();
+    // Fermer la page à la fin du traitement de toutes les URLs
+    await page.close();
 
-            for (const url of CHANNEL_URLS) {
-                console.log(`📬 Posting to: ${url}`);
-                const isEveryone = EVERYONE_CHANNELS.has(url);
-                console.log(`🔍 Channel ${url} is ${isEveryone ? '' : 'NOT '}in EVERYONE_CHANNELS`);
-
-                await page.goto(url, { waitUntil: 'networkidle' });
-
-                try {
-                    await page.waitForSelector('[role="textbox"]', { timeout: 10000 });
-                    console.log('⌨️ Found textbox');
-
-                    const fullMessage = isEveryone
-                        ? `@everyone ${MESSAGE}`
-                        : MESSAGE;
-
-                    console.log(`📝 Final message to send: "${fullMessage}"`);
-                    await typeLikeHuman(page, '[role="textbox"]', fullMessage);
-                    await page.waitForTimeout(1000 + Math.random() * 1000);
-                    await page.keyboard.press('Enter');
-                    console.log('✅ Message sent');
-
-                    try {
-                        const confirmButton = await page.waitForSelector('[role="button"] >> text=Send Now', { timeout: 3000 });
-                        if (confirmButton) {
-                            await confirmButton.click();
-                            console.log('🔔 Clicked @everyone confirmation');
-                        }
-                    } catch (popupErr) {
-                        console.log('ℹ️ No @everyone confirmation needed');
-                    }
-
-                } catch (err) {
-                    console.log(`❌ Could not post in ${url}:`, err.message);
-                }
-
-                await page.waitForTimeout(2000 + Math.random() * 3000);
-            }
-
-        } finally {
-            await browser.close();
-        }
-    }).catch(err => {
-        console.error('❌ Error:', err);
-    });
+    console.log(
+      `\n📊 Summary: Posted to ${successCount} channels, failed on ${failCount} channels`
+    );
+  } catch (err) {
+    console.error("❌ Error:", err);
+    throw err;
+  } finally {
+    await browser.close();
+  }
 }
+
+module.exports = async function postToDiscordChannels(message, _postType) {
+  await postToChannels(message, _postType);
+};
