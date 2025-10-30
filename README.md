@@ -121,9 +121,9 @@ If you want the backend to also save song info (e.g., Suno links) into a Google 
 An example env file is included. Place a `.env` file in the backend directory or export these environment variables in your environment. Example values from `.env.example`:
 
 # Suno API
-SUNOAPI_URL='https://api.suno-proxy.click/song/'
+`SUNOAPI_URL='https://api.suno-proxy.click/song/'
 SUNOAPI_USERNAME=''
-SUNOAPI_PASSWORD=''
+SUNOAPI_PASSWORD=''`
 
 # Google Sheets API
 SHEET_ID='1FFaCPSrOvCwG_ekeEPmre21Hl9y22bm606A0bBUaCl9'
